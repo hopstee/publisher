@@ -37,6 +37,7 @@ func (r Reader) Read(ctx context.Context, events <-chan domain.WatcherEvent) <-c
 }
 
 func (r Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEvent) {
+	defer r.close()
 	for {
 		select {
 		case <-ctx.Done():
@@ -44,7 +45,10 @@ func (r Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEv
 				slog.Error("context occured", slog.Any("error", ctx.Err()))
 			}
 			return
-		case e := <-events:
+		case e, ok := <-events:
+			if !ok {
+				return
+			}
 			b, err := readFile(e.Path)
 			if err != nil {
 				slog.Error("failed to read file", slog.Any("error", err))
@@ -56,13 +60,21 @@ func (r Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEv
 				continue
 			}
 
-			r.readDocuments <- domain.ReadResult{
+			r.sendToChannel(ctx, domain.ReadResult{
 				Content: doc,
 				Path:    e.Path,
 				Images:  extractImgLinks(b),
 				Action:  e.Type,
-			}
+			})
 		}
+	}
+}
+
+func (r Reader) sendToChannel(ctx context.Context, result domain.ReadResult) {
+	select {
+	case <-ctx.Done():
+		return
+	case r.readDocuments <- result:
 	}
 }
 
@@ -113,4 +125,8 @@ func (r Reader) resolveFormat() *frontmatter.Format {
 	default:
 		return frontmatter.NewFormat("---", "---", yaml.Unmarshal)
 	}
+}
+
+func (r Reader) close() {
+	close(r.readDocuments)
 }
