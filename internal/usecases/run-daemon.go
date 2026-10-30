@@ -11,7 +11,7 @@ type Watcher interface {
 }
 
 type Reader interface {
-	Read(context.Context, <-chan domain.WatcherEvent) <-chan domain.Document
+	Read(context.Context, <-chan domain.WatcherEvent) <-chan domain.ReadResult
 }
 
 type Policy interface {

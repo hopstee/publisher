@@ -10,7 +10,4 @@ type Document struct {
 	Publish     bool      `yaml:"Publish"`
 	Draft       bool      `yaml:"Draft"`
 	Date        time.Time `yaml:"Date"`
-
-	Path   string
-	Images []string
 }

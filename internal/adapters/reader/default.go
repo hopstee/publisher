@@ -17,7 +17,7 @@ const DEFAULT_READ_DOCUMENTS_CHAN_BUFFER = 10
 const DEFAULT_FRONTMATTER_FORMAT = "yaml"
 
 type Reader struct {
-	readDocuments     chan domain.Document
+	readDocuments     chan domain.ReadResult
 	frontmatterFormat string
 }
 
@@ -26,12 +26,12 @@ func NewReader(format string) Reader {
 		format = DEFAULT_FRONTMATTER_FORMAT
 	}
 	return Reader{
-		readDocuments:     make(chan domain.Document, DEFAULT_READ_DOCUMENTS_CHAN_BUFFER),
+		readDocuments:     make(chan domain.ReadResult, DEFAULT_READ_DOCUMENTS_CHAN_BUFFER),
 		frontmatterFormat: format,
 	}
 }
 
-func (r Reader) Read(ctx context.Context, events <-chan domain.WatcherEvent) <-chan domain.Document {
+func (r Reader) Read(ctx context.Context, events <-chan domain.WatcherEvent) <-chan domain.ReadResult {
 	go r.listenEvents(ctx, events)
 	return r.readDocuments
 }
@@ -55,9 +55,13 @@ func (r Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEv
 				slog.Error("failed to parse file", slog.Any("error", err))
 				continue
 			}
-			doc.Images = extractImgLinks(b)
-			doc.Path = e.Path
-			r.readDocuments <- doc
+
+			r.readDocuments <- domain.ReadResult{
+				Content: doc,
+				Path:    e.Path,
+				Images:  extractImgLinks(b),
+				Action:  e.Type,
+			}
 		}
 	}
 }

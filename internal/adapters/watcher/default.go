@@ -115,20 +115,20 @@ func (w *Watcher) resolveEvent(event fsnotify.Event) {
 		} else {
 			w.watchEvents <- domain.WatcherEvent{
 				Path: event.Name,
-				Type: domain.UpsertWatcherEventType,
+				Type: domain.UpsertDocActionType,
 			}
 		}
 	case event.Has(fsnotify.Write):
 		w.watchEvents <- domain.WatcherEvent{
 			Path: event.Name,
-			Type: domain.UpsertWatcherEventType,
+			Type: domain.UpsertDocActionType,
 		}
 	case event.Has(fsnotify.Rename), event.Has(fsnotify.Remove):
 		_, err := os.Stat(event.Name)
 		if os.IsNotExist(err) {
 			w.watchEvents <- domain.WatcherEvent{
 				Path: event.Name,
-				Type: domain.DeleteWatcherEventType,
+				Type: domain.DeleteDocActionType,
 			}
 		}
 	}
