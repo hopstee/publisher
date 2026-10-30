@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"publisher/internal/adapters/reader"
 	"publisher/internal/adapters/watcher"
 	"publisher/internal/usecases"
 )
@@ -17,6 +18,7 @@ func runDaemon(ctx context.Context, args []string) error {
 	}
 	rd := usecases.NewRunDaemon(
 		watcher.NewWatcher(args[1]),
+		reader.NewReader(""),
 	)
 	return rd.Execute(ctx)
 }

@@ -11,7 +11,7 @@ type Watcher interface {
 }
 
 type Reader interface {
-	Read(string) ([]byte, error)
+	Read(context.Context, <-chan domain.WatcherEvent) <-chan domain.Document
 }
 
 type Policy interface {
@@ -29,8 +29,8 @@ type runDaemon struct {
 	publisher Publisher
 }
 
-func NewRunDaemon(w Watcher) runDaemon {
-	return runDaemon{watcher: w}
+func NewRunDaemon(w Watcher, r Reader) runDaemon {
+	return runDaemon{watcher: w, reader: r}
 }
 
 func (r runDaemon) Execute(ctx context.Context) error {
@@ -39,12 +39,14 @@ func (r runDaemon) Execute(ctx context.Context) error {
 		return err
 	}
 
+	docs := r.reader.Read(ctx, events)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case e := <-events:
-			slog.Debug("new event", slog.Any("data", e))
+		case d := <-docs:
+			slog.Debug("new doc", slog.Any("data", d))
 		}
 	}
 }

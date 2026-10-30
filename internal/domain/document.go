@@ -3,12 +3,14 @@ package domain
 import "time"
 
 type Document struct {
-	Slug        string
-	Title       string
-	Description string
-	Cover       string
-	Path        string
-	Images      []string
-	Publish     bool
-	Date        time.Time
+	Slug        string    `yaml:"Slug"`
+	Title       string    `yaml:"Title"`
+	Description string    `yaml:"Description"`
+	Cover       string    `yaml:"Cover"`
+	Publish     bool      `yaml:"Publish"`
+	Draft       bool      `yaml:"Draft"`
+	Date        time.Time `yaml:"Date"`
+
+	Path   string
+	Images []string
 }
