@@ -13,30 +13,30 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const DEFAULT_READ_DOCUMENTS_CHAN_BUFFER = 10
-const DEFAULT_FRONTMATTER_FORMAT = "yaml"
+const defaultReadDocumentsChanBuffer = 10
+const defaultFrontmatterFormat = "yaml"
 
 type Reader struct {
 	readDocuments     chan domain.ReadResult
 	frontmatterFormat string
 }
 
-func NewReader(format string) Reader {
+func NewReader(format string) *Reader {
 	if format == "" {
-		format = DEFAULT_FRONTMATTER_FORMAT
+		format = defaultFrontmatterFormat
 	}
-	return Reader{
-		readDocuments:     make(chan domain.ReadResult, DEFAULT_READ_DOCUMENTS_CHAN_BUFFER),
+	return &Reader{
+		readDocuments:     make(chan domain.ReadResult, defaultReadDocumentsChanBuffer),
 		frontmatterFormat: format,
 	}
 }
 
-func (r Reader) Read(ctx context.Context, events <-chan domain.WatcherEvent) <-chan domain.ReadResult {
+func (r *Reader) Read(ctx context.Context, events <-chan domain.WatcherEvent) <-chan domain.ReadResult {
 	go r.listenEvents(ctx, events)
 	return r.readDocuments
 }
 
-func (r Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEvent) {
+func (r *Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEvent) {
 	defer r.close()
 	for {
 		select {
@@ -70,7 +70,7 @@ func (r Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEv
 	}
 }
 
-func (r Reader) sendToChannel(ctx context.Context, result domain.ReadResult) {
+func (r *Reader) sendToChannel(ctx context.Context, result domain.ReadResult) {
 	select {
 	case <-ctx.Done():
 		return
@@ -83,7 +83,7 @@ func readFile(filePath string) ([]byte, error) {
 	return os.ReadFile(filePath)
 }
 
-func (r Reader) parseFrontmatter(b io.Reader) (domain.Document, error) {
+func (r *Reader) parseFrontmatter(b io.Reader) (domain.Document, error) {
 	var doc domain.Document
 	_, err := frontmatter.Parse(b, &doc, r.resolveFormat())
 	if err != nil {
@@ -96,6 +96,7 @@ var (
 	imgLinkRegexp = regexp.MustCompile(`!\[\[([^\]|]+)(?:\|[^\]]+)?\]\]|!\[[^\]]*\]\(([^)]+)\)`)
 )
 
+// TODO: add extracting alt text
 func extractImgLinks(b []byte) []string {
 	matches := imgLinkRegexp.FindAllSubmatch(b, -1)
 	images := make([]string, 0, len(matches))
@@ -119,7 +120,7 @@ func extractImgLinks(b []byte) []string {
 	return images
 }
 
-func (r Reader) resolveFormat() *frontmatter.Format {
+func (r *Reader) resolveFormat() *frontmatter.Format {
 	// TODO: later add more formats
 	switch r.frontmatterFormat {
 	default:
@@ -127,6 +128,6 @@ func (r Reader) resolveFormat() *frontmatter.Format {
 	}
 }
 
-func (r Reader) close() {
+func (r *Reader) close() {
 	close(r.readDocuments)
 }

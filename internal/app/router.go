@@ -23,7 +23,7 @@ func route(ctx context.Context) error {
 	case "publish":
 		runPublish(ctx, args[1:])
 	case "policy":
-		runPolicy(args[1])
+		runPolicy(ctx, args[1:])
 	case "help":
 		runUsage()
 	default:

@@ -1,4 +1,4 @@
-package usecases
+package runpolicy
 
 import (
 	"context"
@@ -15,38 +15,34 @@ type Reader interface {
 }
 
 type Policy interface {
-	Check(string) ([]byte, error)
+	Check(context.Context, <-chan domain.ReadResult) <-chan domain.CheckVerdict
 }
 
-type Publisher interface {
-	Publish(string) ([]byte, error)
+type runPolicy struct {
+	watcher Watcher
+	reader  Reader
+	policy  Policy
 }
 
-type runDaemon struct {
-	watcher   Watcher
-	reader    Reader
-	policy    Policy
-	publisher Publisher
+func NewRunPolicy(w Watcher, r Reader, p Policy) runPolicy {
+	return runPolicy{watcher: w, reader: r, policy: p}
 }
 
-func NewRunDaemon(w Watcher, r Reader) runDaemon {
-	return runDaemon{watcher: w, reader: r}
-}
-
-func (r runDaemon) Execute(ctx context.Context) error {
+func (r runPolicy) Execute(ctx context.Context) error {
 	events, err := r.watcher.Watch(ctx)
 	if err != nil {
 		return err
 	}
 
 	docs := r.reader.Read(ctx, events)
+	checked := r.policy.Check(ctx, docs)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case d := <-docs:
-			slog.Debug("new doc", slog.Any("data", d))
+		case c := <-checked:
+			slog.Debug("new doc", slog.Any("data", c))
 		}
 	}
 }

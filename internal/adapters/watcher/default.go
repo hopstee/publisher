@@ -13,7 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-const DEFAULT_WATCH_EVENTS_CHAN_BUFFER = 10
+const defaultWatcherEventsChanBuffer = 10
 
 type Watcher struct {
 	dirPath      string
@@ -33,7 +33,7 @@ type Watcher struct {
 func NewWatcher(dirPath string) *Watcher {
 	return &Watcher{
 		dirPath:      dirPath,
-		watchEvents:  make(chan domain.WatcherEvent, DEFAULT_WATCH_EVENTS_CHAN_BUFFER),
+		watchEvents:  make(chan domain.WatcherEvent, defaultWatcherEventsChanBuffer),
 		lastEvent:    make(map[string]*time.Timer),
 		debounceTime: 2 * time.Second,
 	}
