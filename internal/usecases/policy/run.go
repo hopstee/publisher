@@ -1,48 +1,38 @@
 package runpolicy
 
 import (
-	"context"
+	"fmt"
 	"log/slog"
 	"publisher/internal/domain"
 )
 
-type Watcher interface {
-	Watch(context.Context) (<-chan domain.WatcherEvent, error)
-}
-
 type Reader interface {
-	Read(context.Context, <-chan domain.WatcherEvent) <-chan domain.ReadResult
+	Read(domain.WatcherEvent) (domain.ReadResult, error)
 }
 
 type Policy interface {
-	Check(context.Context, <-chan domain.ReadResult) <-chan domain.CheckVerdict
+	Check(domain.ReadResult) domain.CheckVerdict
 }
 
 type runPolicy struct {
-	watcher Watcher
-	reader  Reader
-	policy  Policy
+	reader Reader
+	policy Policy
 }
 
-func NewRunPolicy(w Watcher, r Reader, p Policy) runPolicy {
-	return runPolicy{watcher: w, reader: r, policy: p}
+func NewRunPolicy(r Reader, p Policy) runPolicy {
+	return runPolicy{reader: r, policy: p}
 }
 
-func (r runPolicy) Execute(ctx context.Context) error {
-	events, err := r.watcher.Watch(ctx)
+func (r runPolicy) Execute(filePath string) error {
+	docs, err := r.reader.Read(domain.WatcherEvent{
+		Path: filePath,
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read provided file: %w", err)
 	}
+	checked := r.policy.Check(docs)
 
-	docs := r.reader.Read(ctx, events)
-	checked := r.policy.Check(ctx, docs)
+	slog.Info("policy check done", slog.Any("verdict", checked))
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case c := <-checked:
-			slog.Debug("new doc", slog.Any("data", c))
-		}
-	}
+	return nil
 }

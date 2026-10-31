@@ -24,12 +24,16 @@ func NewPolicy(v bool, s bool) *Policy {
 	}
 }
 
-func (p *Policy) Check(ctx context.Context, results <-chan domain.ReadResult) <-chan domain.CheckVerdict {
-	go p.validate(ctx, results)
+func (p *Policy) CheckAll(ctx context.Context, results <-chan domain.ReadResult) <-chan domain.CheckVerdict {
+	go p.listenResults(ctx, results)
 	return p.checkVerdicts
 }
 
-func (p *Policy) validate(ctx context.Context, results <-chan domain.ReadResult) {
+func (p *Policy) Check(r domain.ReadResult) domain.CheckVerdict {
+	return p.validate(r)
+}
+
+func (p *Policy) listenResults(ctx context.Context, results <-chan domain.ReadResult) {
 	defer p.close()
 	for {
 		select {
@@ -42,26 +46,29 @@ func (p *Policy) validate(ctx context.Context, results <-chan domain.ReadResult)
 			if !ok {
 				return
 			}
-
-			findings := collectFindings(r.Content)
-			imageFindings := p.validateImages(r.Path, r.Images)
-			findings.Errors = append(findings.Errors, imageFindings.Errors...)
-			findings.Warnings = append(findings.Warnings, imageFindings.Warnings...)
-			p.logFindings(r.Path, findings)
-
-			canPublish := p.canPublish(findings)
-
-			p.writeToChannel(ctx, domain.CheckVerdict{
-				Findings:         findings,
-				Content:          r.Content,
-				Path:             r.Path,
-				Images:           r.Images,
-				Action:           r.Action,
-				CanPublish:       canPublish,
-				ImmidiatePublish: false, // use from config
-				PublishAt:        r.Content.Date,
-			})
+			p.writeToChannel(ctx, p.validate(r))
 		}
+	}
+}
+
+func (p *Policy) validate(r domain.ReadResult) domain.CheckVerdict {
+	findings := collectFindings(r.Content)
+	imageFindings := p.validateImages(r.Path, r.Images)
+	findings.Errors = append(findings.Errors, imageFindings.Errors...)
+	findings.Warnings = append(findings.Warnings, imageFindings.Warnings...)
+	p.logFindings(r.Path, findings)
+
+	canPublish := p.canPublish(findings)
+
+	return domain.CheckVerdict{
+		Findings:         findings,
+		Content:          r.Content,
+		Path:             r.Path,
+		Images:           r.Images,
+		Action:           r.Action,
+		CanPublish:       canPublish,
+		ImmidiatePublish: false, // use from config
+		PublishAt:        r.Content.Date,
 	}
 }
 
@@ -108,31 +115,34 @@ func (p *Policy) logFindings(filepath string, f domain.ValidationResult) {
 	if !p.verbose {
 		return
 	}
-	errAttrs := make([]any, 0, len(f.Errors))
-	for _, f := range f.Errors {
-		errAttrs = append(errAttrs, slog.Group("finding",
-			slog.String("field", f.Field),
-			slog.String("message", f.Message),
-		))
+	if len(f.Errors) > 0 {
+		errAttrs := make([]any, 0, len(f.Errors))
+		for _, f := range f.Errors {
+			errAttrs = append(errAttrs, slog.Group("finding",
+				slog.String("field", f.Field),
+				slog.String("message", f.Message),
+			))
+		}
+		slog.Error(
+			"Document has errors",
+			slog.String("document", filepath),
+			slog.Group("findings", errAttrs...),
+		)
 	}
-	slog.Error(
-		"Document has errors",
-		slog.String("document", filepath),
-		slog.Group("findings", errAttrs...),
-	)
-
-	warnAttrs := make([]any, 0, len(f.Warnings))
-	for _, f := range f.Warnings {
-		warnAttrs = append(warnAttrs, slog.Group("finding",
-			slog.String("field", f.Field),
-			slog.String("message", f.Message),
-		))
+	if len(f.Warnings) > 0 {
+		warnAttrs := make([]any, 0, len(f.Warnings))
+		for _, f := range f.Warnings {
+			warnAttrs = append(warnAttrs, slog.Group("finding",
+				slog.String("field", f.Field),
+				slog.String("message", f.Message),
+			))
+		}
+		slog.Warn(
+			"Document has warnings",
+			slog.String("document", filepath),
+			slog.Group("findings", warnAttrs...),
+		)
 	}
-	slog.Warn(
-		"Document has warnings",
-		slog.String("document", filepath),
-		slog.Group("findings", warnAttrs...),
-	)
 }
 
 func (p *Policy) validateImages(filePath string, images []string) domain.ValidationResult {

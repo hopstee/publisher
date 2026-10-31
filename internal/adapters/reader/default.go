@@ -31,9 +31,13 @@ func NewReader(format string) *Reader {
 	}
 }
 
-func (r *Reader) Read(ctx context.Context, events <-chan domain.WatcherEvent) <-chan domain.ReadResult {
+func (r *Reader) ReadAll(ctx context.Context, events <-chan domain.WatcherEvent) <-chan domain.ReadResult {
 	go r.listenEvents(ctx, events)
 	return r.readDocuments
+}
+
+func (r *Reader) Read(e domain.WatcherEvent) (domain.ReadResult, error) {
+	return r.handleEvent(e)
 }
 
 func (r *Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEvent) {
@@ -49,25 +53,33 @@ func (r *Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherE
 			if !ok {
 				return
 			}
-			b, err := readFile(e.Path)
+			res, err := r.handleEvent(e)
 			if err != nil {
-				slog.Error("failed to read file", slog.Any("error", err))
 				continue
 			}
-			doc, err := r.parseFrontmatter(bytes.NewReader(b))
-			if err != nil {
-				slog.Error("failed to parse file", slog.Any("error", err))
-				continue
-			}
-
-			r.sendToChannel(ctx, domain.ReadResult{
-				Content: doc,
-				Path:    e.Path,
-				Images:  extractImgLinks(b),
-				Action:  e.Type,
-			})
+			r.sendToChannel(ctx, res)
 		}
 	}
+}
+
+func (r *Reader) handleEvent(e domain.WatcherEvent) (domain.ReadResult, error) {
+	b, err := readFile(e.Path)
+	if err != nil {
+		slog.Error("failed to read file", slog.Any("error", err))
+		return domain.ReadResult{}, err
+	}
+	doc, err := r.parseFrontmatter(bytes.NewReader(b))
+	if err != nil {
+		slog.Error("failed to parse file", slog.Any("error", err))
+		return domain.ReadResult{}, err
+	}
+
+	return domain.ReadResult{
+		Content: doc,
+		Path:    e.Path,
+		Images:  extractImgLinks(b),
+		Action:  e.Type,
+	}, nil
 }
 
 func (r *Reader) sendToChannel(ctx context.Context, result domain.ReadResult) {

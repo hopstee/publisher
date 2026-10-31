@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -144,11 +145,11 @@ func (w *Watcher) writeToChannel(ctx context.Context, path string, entityType do
 
 func (w *Watcher) addSubDirs(rootDir string, subDirs []string) error {
 	if err := w.fsw.Add(rootDir); err != nil {
-		return err
+		return fmt.Errorf("failed to add root directory to fs watcher: %w", err)
 	}
 	for _, s := range subDirs {
 		if err := w.fsw.Add(s); err != nil {
-			return err
+			return fmt.Errorf("failed to add sub directory %s to fs watcher: %w", s, err)
 		}
 	}
 	return nil
@@ -157,7 +158,7 @@ func (w *Watcher) addSubDirs(rootDir string, subDirs []string) error {
 func (w *Watcher) addSubDir(p string) error {
 	children, err := collectSubDirs(p)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to collect sub directories: %w", err)
 	}
 	return w.addSubDirs(p, children)
 }

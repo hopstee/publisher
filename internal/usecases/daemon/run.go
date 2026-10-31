@@ -2,6 +2,7 @@ package rundaemon
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"publisher/internal/domain"
 )
@@ -11,15 +12,15 @@ type Watcher interface {
 }
 
 type Reader interface {
-	Read(context.Context, <-chan domain.WatcherEvent) <-chan domain.ReadResult
+	ReadAll(context.Context, <-chan domain.WatcherEvent) <-chan domain.ReadResult
 }
 
 type Policy interface {
-	Check(context.Context, <-chan domain.ReadResult) <-chan domain.CheckVerdict
+	CheckAll(context.Context, <-chan domain.ReadResult) <-chan domain.CheckVerdict
 }
 
 type Publisher interface {
-	Publish(string) ([]byte, error)
+	PublishAll(string) ([]byte, error)
 }
 
 type runDaemon struct {
@@ -36,11 +37,11 @@ func NewRunDaemon(w Watcher, r Reader, p Policy) runDaemon {
 func (r runDaemon) Execute(ctx context.Context) error {
 	events, err := r.watcher.Watch(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start fs watcher: %w", err)
 	}
 
-	docs := r.reader.Read(ctx, events)
-	checked := r.policy.Check(ctx, docs)
+	docs := r.reader.ReadAll(ctx, events)
+	checked := r.policy.CheckAll(ctx, docs)
 
 	for {
 		select {
