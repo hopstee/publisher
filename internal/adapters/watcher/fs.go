@@ -96,6 +96,10 @@ func skipEvent(event fsnotify.Event) bool {
 }
 
 func (fs *FS) resolveEvent(ctx context.Context, event fsnotify.Event) {
+	// if we delete directory or file function isDerictory will throw error.
+	// by the way if we delete directory we need to handle this event too
+	// because direcctory can contain child entities, and if directory deleted
+	// need to delete all the children
 	isDir, err := isDirectory(event.Name)
 	if err != nil {
 		slog.Error("failed to determine entity type", slog.Any("error", err))
