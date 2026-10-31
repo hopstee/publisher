@@ -16,7 +16,7 @@ import (
 
 const defaultWatcherEventsChanBuffer = 10
 
-type Watcher struct {
+type FS struct {
 	dirPath      string
 	watchEvents  chan domain.WatcherEvent
 	fsw          *fsnotify.Watcher
@@ -31,8 +31,8 @@ type Watcher struct {
 	cancel context.CancelFunc
 }
 
-func NewWatcher(dirPath string) *Watcher {
-	return &Watcher{
+func NewFSWatcher(dirPath string) *FS {
+	return &FS{
 		dirPath:      dirPath,
 		watchEvents:  make(chan domain.WatcherEvent, defaultWatcherEventsChanBuffer),
 		lastEvent:    make(map[string]*time.Timer),
@@ -40,40 +40,40 @@ func NewWatcher(dirPath string) *Watcher {
 	}
 }
 
-func (w *Watcher) Watch(ctx context.Context) (<-chan domain.WatcherEvent, error) {
-	w.ctx, w.cancel = context.WithCancel(ctx)
+func (fs *FS) Watch(ctx context.Context) (<-chan domain.WatcherEvent, error) {
+	fs.ctx, fs.cancel = context.WithCancel(ctx)
 
-	subDirs, err := collectSubDirs(w.dirPath)
+	subDirs, err := collectSubDirs(fs.dirPath)
 	if err != nil {
 		return nil, err
 	}
-	w.fsw, err = fsnotify.NewWatcher()
+	fs.fsw, err = fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
 	}
-	if err := w.addSubDirs(w.dirPath, subDirs); err != nil {
-		_ = w.fsw.Close()
+	if err := fs.addSubDirs(fs.dirPath, subDirs); err != nil {
+		_ = fs.fsw.Close()
 		return nil, err
 	}
 
-	go w.listenEvents(w.ctx)
+	go fs.listenEvents(fs.ctx)
 
-	return w.watchEvents, nil
+	return fs.watchEvents, nil
 }
 
-func (w *Watcher) listenEvents(ctx context.Context) {
-	defer w.close()
+func (fs *FS) listenEvents(ctx context.Context) {
+	defer fs.close()
 	for {
 		select {
-		case event, ok := <-w.fsw.Events:
+		case event, ok := <-fs.fsw.Events:
 			if !ok {
 				return
 			}
 			if skipEvent(event) {
 				continue
 			}
-			w.resolveEvent(ctx, event)
-		case err, ok := <-w.fsw.Errors:
+			fs.resolveEvent(ctx, event)
+		case err, ok := <-fs.fsw.Errors:
 			if !ok {
 				return
 			}
@@ -95,128 +95,128 @@ func skipEvent(event fsnotify.Event) bool {
 	return event.Has(fsnotify.Chmod) || strings.HasPrefix(filepath.Base(event.Name), "~")
 }
 
-func (w *Watcher) resolveEvent(ctx context.Context, event fsnotify.Event) {
+func (fs *FS) resolveEvent(ctx context.Context, event fsnotify.Event) {
 	isDir, err := isDirectory(event.Name)
 	if err != nil {
 		slog.Error("failed to determine entity type", slog.Any("error", err))
 		return
 	}
 	if isDir {
-		w.resolveDirEvent(event)
+		fs.resolveDirEvent(event)
 		return
 	}
 	if isMDFile(event.Name) {
-		w.debounce(event.Name, func() {
-			w.resolveFileEvent(ctx, event)
+		fs.debounce(event.Name, func() {
+			fs.resolveFileEvent(ctx, event)
 		})
 	}
 }
 
-func (w *Watcher) resolveDirEvent(event fsnotify.Event) {
+func (fs *FS) resolveDirEvent(event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
-		if err := w.addSubDir(event.Name); err != nil {
+		if err := fs.addSubDir(event.Name); err != nil {
 			slog.Error("failed to add new dir to watcher list", slog.Any("error", err))
 		}
 	}
 }
 
-func (w *Watcher) resolveFileEvent(ctx context.Context, event fsnotify.Event) {
+func (fs *FS) resolveFileEvent(ctx context.Context, event fsnotify.Event) {
 	switch {
 	case event.Has(fsnotify.Create), event.Has(fsnotify.Write):
-		w.writeToChannel(ctx, event.Name, domain.UpsertDocActionType)
+		fs.writeToChannel(ctx, event.Name, domain.UpsertDocActionType)
 	case event.Has(fsnotify.Rename), event.Has(fsnotify.Remove):
 		_, err := os.Stat(event.Name)
 		if os.IsNotExist(err) {
-			w.writeToChannel(ctx, event.Name, domain.DeleteDocActionType)
+			fs.writeToChannel(ctx, event.Name, domain.DeleteDocActionType)
 		}
 	}
 }
 
-func (w *Watcher) writeToChannel(ctx context.Context, path string, entityType domain.DocActionType) {
+func (fs *FS) writeToChannel(ctx context.Context, path string, entityType domain.DocActionType) {
 	select {
 	case <-ctx.Done():
 		return
-	case w.watchEvents <- domain.WatcherEvent{
+	case fs.watchEvents <- domain.WatcherEvent{
 		Path: path,
 		Type: entityType,
 	}:
 	}
 }
 
-func (w *Watcher) addSubDirs(rootDir string, subDirs []string) error {
-	if err := w.fsw.Add(rootDir); err != nil {
+func (fs *FS) addSubDirs(rootDir string, subDirs []string) error {
+	if err := fs.fsw.Add(rootDir); err != nil {
 		return fmt.Errorf("failed to add root directory to fs watcher: %w", err)
 	}
 	for _, s := range subDirs {
-		if err := w.fsw.Add(s); err != nil {
+		if err := fs.fsw.Add(s); err != nil {
 			return fmt.Errorf("failed to add sub directory %s to fs watcher: %w", s, err)
 		}
 	}
 	return nil
 }
 
-func (w *Watcher) addSubDir(p string) error {
+func (fs *FS) addSubDir(p string) error {
 	children, err := collectSubDirs(p)
 	if err != nil {
 		return fmt.Errorf("failed to collect sub directories: %w", err)
 	}
-	return w.addSubDirs(p, children)
+	return fs.addSubDirs(p, children)
 }
 
-func (w *Watcher) debounce(eventName string, callback func()) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func (fs *FS) debounce(eventName string, callback func()) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
 
-	if w.stopped {
+	if fs.stopped {
 		return
 	}
 
-	if t, ok := w.lastEvent[eventName]; ok {
+	if t, ok := fs.lastEvent[eventName]; ok {
 		if t.Stop() {
-			w.wg.Done()
+			fs.wg.Done()
 		}
 	}
 
 	var timer *time.Timer
 
-	w.wg.Add(1)
-	timer = time.AfterFunc(w.debounceTime, func() {
-		defer w.wg.Done()
-		w.mu.Lock()
+	fs.wg.Add(1)
+	timer = time.AfterFunc(fs.debounceTime, func() {
+		defer fs.wg.Done()
+		fs.mu.Lock()
 
-		isCurrent := w.lastEvent[eventName] == timer
+		isCurrent := fs.lastEvent[eventName] == timer
 		if isCurrent {
-			delete(w.lastEvent, eventName)
+			delete(fs.lastEvent, eventName)
 		}
 
-		stopped := w.stopped
-		w.mu.Unlock()
+		stopped := fs.stopped
+		fs.mu.Unlock()
 
 		if isCurrent && !stopped {
 			callback()
 		}
 	})
 
-	w.lastEvent[eventName] = timer
+	fs.lastEvent[eventName] = timer
 }
 
-func (w *Watcher) close() {
-	w.cancel()
+func (fs *FS) close() {
+	fs.cancel()
 
-	w.mu.Lock()
-	w.stopped = true
-	for name, timer := range w.lastEvent {
+	fs.mu.Lock()
+	fs.stopped = true
+	for name, timer := range fs.lastEvent {
 		if timer.Stop() {
-			w.wg.Done()
+			fs.wg.Done()
 		}
-		delete(w.lastEvent, name)
+		delete(fs.lastEvent, name)
 	}
-	w.mu.Unlock()
+	fs.mu.Unlock()
 
-	w.wg.Wait()
+	fs.wg.Wait()
 
-	close(w.watchEvents)
-	if err := w.fsw.Close(); err != nil {
+	close(fs.watchEvents)
+	if err := fs.fsw.Close(); err != nil {
 		slog.Error("failed to close file system watcher", slog.Any("error", err))
 	}
 }

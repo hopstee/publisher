@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type Policy struct {
+type Default struct {
 	checkVerdicts chan domain.CheckVerdict
 	verbose       bool
 	strict        bool
@@ -16,25 +16,25 @@ type Policy struct {
 
 const defaultCheckVerdictsChanBuffer = 10
 
-func NewPolicy(v bool, s bool) *Policy {
-	return &Policy{
+func NewDefaultPolicy(v bool, s bool) *Default {
+	return &Default{
 		checkVerdicts: make(chan domain.CheckVerdict, defaultCheckVerdictsChanBuffer),
 		verbose:       v,
 		strict:        s,
 	}
 }
 
-func (p *Policy) CheckAll(ctx context.Context, results <-chan domain.ReadResult) <-chan domain.CheckVerdict {
-	go p.listenResults(ctx, results)
-	return p.checkVerdicts
+func (d *Default) CheckAll(ctx context.Context, results <-chan domain.ReadResult) <-chan domain.CheckVerdict {
+	go d.listenResults(ctx, results)
+	return d.checkVerdicts
 }
 
-func (p *Policy) Check(r domain.ReadResult) domain.CheckVerdict {
-	return p.validate(r)
+func (d *Default) Check(r domain.ReadResult) domain.CheckVerdict {
+	return d.validate(r)
 }
 
-func (p *Policy) listenResults(ctx context.Context, results <-chan domain.ReadResult) {
-	defer p.close()
+func (d *Default) listenResults(ctx context.Context, results <-chan domain.ReadResult) {
+	defer d.close()
 	for {
 		select {
 		case <-ctx.Done():
@@ -46,19 +46,19 @@ func (p *Policy) listenResults(ctx context.Context, results <-chan domain.ReadRe
 			if !ok {
 				return
 			}
-			p.writeToChannel(ctx, p.validate(r))
+			d.writeToChannel(ctx, d.validate(r))
 		}
 	}
 }
 
-func (p *Policy) validate(r domain.ReadResult) domain.CheckVerdict {
+func (d *Default) validate(r domain.ReadResult) domain.CheckVerdict {
 	findings := collectFindings(r.Content)
-	imageFindings := p.validateImages(r.Path, r.Images)
+	imageFindings := d.validateImages(r.Path, r.Images)
 	findings.Errors = append(findings.Errors, imageFindings.Errors...)
 	findings.Warnings = append(findings.Warnings, imageFindings.Warnings...)
-	p.logFindings(r.Path, findings)
+	d.logFindings(r.Path, findings)
 
-	canPublish := p.canPublish(findings)
+	canPublish := d.canPublish(findings)
 
 	return domain.CheckVerdict{
 		Findings:         findings,
@@ -72,11 +72,11 @@ func (p *Policy) validate(r domain.ReadResult) domain.CheckVerdict {
 	}
 }
 
-func (p *Policy) writeToChannel(ctx context.Context, c domain.CheckVerdict) {
+func (d *Default) writeToChannel(ctx context.Context, c domain.CheckVerdict) {
 	select {
 	case <-ctx.Done():
 		return
-	case p.checkVerdicts <- c:
+	case d.checkVerdicts <- c:
 	}
 }
 
@@ -101,18 +101,18 @@ func collectFindings(document domain.Document) domain.ValidationResult {
 	return findings
 }
 
-func (p *Policy) canPublish(f domain.ValidationResult) bool {
+func (d *Default) canPublish(f domain.ValidationResult) bool {
 	if len(f.Errors) > 0 {
 		return false
 	}
-	if p.verbose && len(f.Warnings) > 0 {
+	if d.strict && len(f.Warnings) > 0 {
 		return false
 	}
 	return true
 }
 
-func (p *Policy) logFindings(filepath string, f domain.ValidationResult) {
-	if !p.verbose {
+func (d *Default) logFindings(filepath string, f domain.ValidationResult) {
+	if !d.verbose {
 		return
 	}
 	if len(f.Errors) > 0 {
@@ -145,7 +145,7 @@ func (p *Policy) logFindings(filepath string, f domain.ValidationResult) {
 	}
 }
 
-func (p *Policy) validateImages(filePath string, images []string) domain.ValidationResult {
+func (d *Default) validateImages(filePath string, images []string) domain.ValidationResult {
 	var findings domain.ValidationResult
 	for _, image := range images {
 		if isExternalImage(image) {
@@ -182,6 +182,6 @@ func isInsideFileDir(filePath, imagePath string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func (p *Policy) close() {
-	close(p.checkVerdicts)
+func (d *Default) close() {
+	close(d.checkVerdicts)
 }

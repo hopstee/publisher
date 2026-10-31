@@ -16,32 +16,32 @@ import (
 const defaultReadDocumentsChanBuffer = 10
 const defaultFrontmatterFormat = "yaml"
 
-type Reader struct {
+type MD struct {
 	readDocuments     chan domain.ReadResult
 	frontmatterFormat string
 }
 
-func NewReader(format string) *Reader {
+func NewMDReader(format string) *MD {
 	if format == "" {
 		format = defaultFrontmatterFormat
 	}
-	return &Reader{
+	return &MD{
 		readDocuments:     make(chan domain.ReadResult, defaultReadDocumentsChanBuffer),
 		frontmatterFormat: format,
 	}
 }
 
-func (r *Reader) ReadAll(ctx context.Context, events <-chan domain.WatcherEvent) <-chan domain.ReadResult {
-	go r.listenEvents(ctx, events)
-	return r.readDocuments
+func (md *MD) ReadAll(ctx context.Context, events <-chan domain.WatcherEvent) <-chan domain.ReadResult {
+	go md.listenEvents(ctx, events)
+	return md.readDocuments
 }
 
-func (r *Reader) Read(e domain.WatcherEvent) (domain.ReadResult, error) {
-	return r.handleEvent(e)
+func (md *MD) Read(e domain.WatcherEvent) (domain.ReadResult, error) {
+	return md.handleEvent(e)
 }
 
-func (r *Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherEvent) {
-	defer r.close()
+func (md *MD) listenEvents(ctx context.Context, events <-chan domain.WatcherEvent) {
+	defer md.close()
 	for {
 		select {
 		case <-ctx.Done():
@@ -53,22 +53,22 @@ func (r *Reader) listenEvents(ctx context.Context, events <-chan domain.WatcherE
 			if !ok {
 				return
 			}
-			res, err := r.handleEvent(e)
+			res, err := md.handleEvent(e)
 			if err != nil {
 				continue
 			}
-			r.sendToChannel(ctx, res)
+			md.sendToChannel(ctx, res)
 		}
 	}
 }
 
-func (r *Reader) handleEvent(e domain.WatcherEvent) (domain.ReadResult, error) {
+func (md *MD) handleEvent(e domain.WatcherEvent) (domain.ReadResult, error) {
 	b, err := readFile(e.Path)
 	if err != nil {
 		slog.Error("failed to read file", slog.Any("error", err))
 		return domain.ReadResult{}, err
 	}
-	doc, err := r.parseFrontmatter(bytes.NewReader(b))
+	doc, err := md.parseFrontmatter(bytes.NewReader(b))
 	if err != nil {
 		slog.Error("failed to parse file", slog.Any("error", err))
 		return domain.ReadResult{}, err
@@ -82,11 +82,11 @@ func (r *Reader) handleEvent(e domain.WatcherEvent) (domain.ReadResult, error) {
 	}, nil
 }
 
-func (r *Reader) sendToChannel(ctx context.Context, result domain.ReadResult) {
+func (md *MD) sendToChannel(ctx context.Context, result domain.ReadResult) {
 	select {
 	case <-ctx.Done():
 		return
-	case r.readDocuments <- result:
+	case md.readDocuments <- result:
 	}
 }
 
@@ -95,9 +95,9 @@ func readFile(filePath string) ([]byte, error) {
 	return os.ReadFile(filePath)
 }
 
-func (r *Reader) parseFrontmatter(b io.Reader) (domain.Document, error) {
+func (md *MD) parseFrontmatter(b io.Reader) (domain.Document, error) {
 	var doc domain.Document
-	_, err := frontmatter.Parse(b, &doc, r.resolveFormat())
+	_, err := frontmatter.Parse(b, &doc, md.resolveFormat())
 	if err != nil {
 		return doc, err
 	}
@@ -132,14 +132,14 @@ func extractImgLinks(b []byte) []string {
 	return images
 }
 
-func (r *Reader) resolveFormat() *frontmatter.Format {
+func (md *MD) resolveFormat() *frontmatter.Format {
 	// TODO: later add more formats
-	switch r.frontmatterFormat {
+	switch md.frontmatterFormat {
 	default:
 		return frontmatter.NewFormat("---", "---", yaml.Unmarshal)
 	}
 }
 
-func (r *Reader) close() {
-	close(r.readDocuments)
+func (md *MD) close() {
+	close(md.readDocuments)
 }

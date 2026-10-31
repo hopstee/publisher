@@ -1,9 +1,8 @@
-package rundaemon
+package processing
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"publisher/internal/domain"
 )
 
@@ -20,35 +19,30 @@ type Policy interface {
 }
 
 type Publisher interface {
-	PublishAll(string) ([]byte, error)
+	PublishAll(context.Context, <-chan domain.CheckVerdict)
 }
 
-type runDaemon struct {
+type Service struct {
 	watcher   Watcher
 	reader    Reader
 	policy    Policy
 	publisher Publisher
 }
 
-func NewRunDaemon(w Watcher, r Reader, p Policy) runDaemon {
-	return runDaemon{watcher: w, reader: r, policy: p}
+func NewService(w Watcher, r Reader, p Policy, pb Publisher) *Service {
+	return &Service{watcher: w, reader: r, policy: p, publisher: pb}
 }
 
-func (r runDaemon) Execute(ctx context.Context) error {
-	events, err := r.watcher.Watch(ctx)
+func (s *Service) Execute(ctx context.Context) error {
+	events, err := s.watcher.Watch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to start fs watcher: %w", err)
 	}
 
-	docs := r.reader.ReadAll(ctx, events)
-	checked := r.policy.CheckAll(ctx, docs)
+	docs := s.reader.ReadAll(ctx, events)
+	checked := s.policy.CheckAll(ctx, docs)
+	s.publisher.PublishAll(ctx, checked)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case d := <-checked:
-			slog.Debug("new doc", slog.Any("data", d))
-		}
-	}
+	<-ctx.Done()
+	return ctx.Err()
 }
